@@ -3,9 +3,8 @@ from flask_cors import CORS
 import os
 import requests
 from bs4 import BeautifulSoup
-from PIL import Image
-from io import BytesIO
-import re
+from backend.api.optimize import minify_html, minify_css, minify_js, optimize_image
+from backend.api.access_control import is_access_allowed
 
 app = Flask(__name__)
 CORS(app)  # Habilita CORS para permitir solicitações do frontend
@@ -21,8 +20,7 @@ def optimize_html():
     if not data:
         return jsonify({"error": "HTML vazio"}), 400
 
-    # Minificar HTML (remoção de espaços desnecessários)
-    optimized_html = re.sub(r"\s+", " ", data).strip()
+    optimized_html = minify_html(data)
     return jsonify({"optimized_html": optimized_html})
 
 # Endpoint: Otimizar CSS
@@ -32,8 +30,7 @@ def optimize_css():
     if not data:
         return jsonify({"error": "CSS vazio"}), 400
 
-    # Minificar CSS
-    optimized_css = re.sub(r"\s+", " ", data).strip()
+    optimized_css = minify_css(data)
     return jsonify({"optimized_css": optimized_css})
 
 # Endpoint: Otimizar JavaScript
@@ -43,25 +40,23 @@ def optimize_js():
     if not data:
         return jsonify({"error": "JavaScript vazio"}), 400
 
-    # Minificar JS
-    optimized_js = re.sub(r"\s+", " ", data).strip()
+    optimized_js = minify_js(data)
     return jsonify({"optimized_js": optimized_js})
 
 # Endpoint: Otimizar Imagens
 @app.route('/optimize/image', methods=['POST'])
-def optimize_image():
+def optimize_image_endpoint():
     try:
         image_url = request.json.get("image_url", "")
         if not image_url:
             return jsonify({"error": "URL da imagem não fornecida"}), 400
 
-        # Fazer download da imagem
-        response = requests.get(image_url)
-        img = Image.open(BytesIO(response.content))
-
-        # Otimizar a imagem (reduzir qualidade para 70%)
+        optimized_image = optimize_image(image_url, quality=70)
         optimized_image_path = os.path.join(UPLOAD_FOLDER, "optimized_image.jpg")
-        img.save(optimized_image_path, "JPEG", quality=70)
+
+        # Salvar imagem otimizada localmente
+        with open(optimized_image_path, "wb") as f:
+            f.write(optimized_image.read())
 
         return jsonify({"optimized_image_url": optimized_image_path})
     except Exception as e:
@@ -74,13 +69,16 @@ def process_site():
     if not site_url:
         return jsonify({"error": "URL do site não fornecida"}), 400
 
+    if not is_access_allowed(site_url):
+        return jsonify({"error": "Acesso ao site não permitido"}), 403
+
     try:
         # Fazer download do HTML do site
         response = requests.get(site_url)
         soup = BeautifulSoup(response.content, "html.parser")
 
         # Otimizar HTML do site
-        optimized_html = re.sub(r"\s+", " ", soup.prettify()).strip()
+        optimized_html = minify_html(soup.prettify())
         return jsonify({"optimized_html": optimized_html})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
